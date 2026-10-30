@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>יומן האכלה ויציאות</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#EDF2F5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Rubik:wght@400;500;600&display=swap">
+
+<style>
+:root {
+  --bg: #EDF2F5;
+  --surface: #FFFFFF;
+  --fg: #13222B;
+  --muted: #52687A;
+  --line: #CFDAE1;
+  --feed: #22688C;
+  --feed-soft: #DAEAF3;
+  --on-feed: #FFFFFF;
+  --out: #935A08;
+  --out-soft: #F5E6CB;
+  --on-out: #FFFFFF;
+  --stop: #B3261E;
+  --on-stop: #FFFFFF;
+  --font-display: 'Rubik', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-body: 'Assistant', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1A21; --surface: #16252E; --fg: #E7EFF3; --muted: #9BB0BD;
+    --line: #2A3D49; --feed: #7CC0E0; --feed-soft: #1B3442; --on-feed: #08161D;
+    --out: #E6B25C; --out-soft: #3A2D14; --on-out: #1E1405;
+    --stop: #F2877E; --on-stop: #2A0A07; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1A21; --surface: #16252E; --fg: #E7EFF3; --muted: #9BB0BD;
+  --line: #2A3D49; --feed: #7CC0E0; --feed-soft: #1B3442; --on-feed: #08161D;
+  --out: #E6B25C; --out-soft: #3A2D14; --on-out: #1E1405;
+  --stop: #F2877E; --on-stop: #2A0A07; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 400 16px/1.5 var(--font-body);
+  direction: rtl;
+  padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.app { max-width: 480px; margin-inline: auto; display: grid; gap: 22px; }
+h1, h2, h3, p { margin: 0; }
+h1 { font: 600 24px/1.25 var(--font-display); text-wrap: balance; }
+h2 { font: 600 18px/1.3 var(--font-display); }
+a { color: inherit; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
+
+.head { display: grid; gap: 4px; }
+.today { color: var(--muted); }
+.acts { display: grid; gap: 14px; }
+.act {
+  display: grid; grid-template-columns: auto 1fr; column-gap: 18px; row-gap: 2px;
+  align-items: center; min-height: 116px; padding: 20px; border-radius: 20px;
+  border: 1px solid transparent; text-decoration: none;
+}
+.act svg { grid-row: span 2; width: 46px; height: 46px; }
+.act-title { font: 600 26px/1.2 var(--font-display); align-self: end; }
+.act-sub { font-size: 15px; align-self: start; min-width: 0; }
+.act.feed { background: var(--feed); color: var(--on-feed); }
+.act.out { background: var(--out); color: var(--on-out); }
+.act.log { background: var(--surface); border-color: var(--line); }
+.act.log svg { color: var(--muted); }
+.note { color: var(--muted); font-size: 14px; }
+
+.bar { display: flex; align-items: center; gap: 14px; }
+.back {
+  display: inline-flex; align-items: center; gap: 4px;
+  min-height: 44px; padding-inline: 10px 16px;
+  border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); text-decoration: none; font-weight: 600;
+}
+.back svg { width: 18px; height: 18px; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 24px 18px; display: grid; gap: 14px; justify-items: stretch; }
+.timer {
+  font: 500 72px/1 var(--font-display); text-align: center; direction: ltr;
+  unicode-bidi: isolate; font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
+}
+.timer.running { color: var(--feed); }
+.t-label { text-align: center; color: var(--muted); min-height: 1.5em; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--stop); margin-inline-end: 8px; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+.big {
+  min-height: 64px; border-radius: 16px; border: 0;
+  font: 600 22px var(--font-display);
+  background: var(--feed); color: var(--on-feed);
+}
+.big.stop { background: var(--stop); color: var(--on-stop); }
+.big.out { background: var(--out); color: var(--on-out); }
+.big:disabled { opacity: 0.4; cursor: not-allowed; }
+.ghost { min-height: 44px; border: 0; background: none; color: var(--muted); font-weight: 600; }
+.ghost.armed { color: var(--stop); }
+
+.hint { color: var(--muted); }
+.choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.choice {
+  min-height: 124px; border-radius: 18px; border: 2px solid var(--line); background: var(--bg);
+  font: 600 28px var(--font-display); display: grid; place-items: center; align-content: center; gap: 4px;
+}
+.choice .mark { font: 600 14px var(--font-body); visibility: hidden; }
+.choice[aria-pressed="true"] { background: var(--out); border-color: var(--out); color: var(--on-out); }
+.choice[aria-pressed="true"] .mark { visibility: visible; }
+.field { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; }
+.field input {
+  font: 500 18px var(--font-display); min-height: 48px; padding: 0 12px;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); direction: ltr;
+}
+
+.filter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; }
+.filter .field { flex: 1 1 auto; }
+
+.sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.count { color: var(--muted); font-size: 14px; }
+.entries { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.entry {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
+}
+.e-main { display: grid; gap: 4px; justify-items: start; min-width: 0; }
+.e-sub { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
+.pill { display: inline-block; padding: 2px 12px; border-radius: 999px; font-weight: 700; font-size: 15px; }
+.pill.feed { background: var(--feed-soft); color: var(--feed); }
+.pill.out { background: var(--out-soft); color: var(--out); }
+.del { min-height: 40px; padding-inline: 12px; border-radius: 10px; border: 1px solid transparent; background: none; color: var(--muted); font-size: 14px; font-weight: 600; flex: none; }
+.del.armed { color: var(--stop); border-color: var(--stop); }
+.empty { color: var(--muted); text-align: center; padding: 18px 14px; border: 1px dashed var(--line); border-radius: 12px; }
+
+.day { display: grid; gap: 10px; margin-bottom: 26px; }
+.day-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.day-d { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { padding: 3px 12px; border-radius: 999px; font-size: 14px; font-weight: 700; background: var(--surface); border: 1px solid var(--line); }
+.chip.feed { background: var(--feed-soft); color: var(--feed); border-color: transparent; }
+.chip.out { background: var(--out-soft); color: var(--out); border-color: transparent; }
+
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  max-width: calc(100% - 32px); width: max-content;
+  background: var(--fg); color: var(--bg);
+  padding: 10px 18px; border-radius: 999px; font-weight: 600;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+</head>
+<body>
+
+<div class="app" id="app"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="module">
+import { firebaseConfig } from './firebase-config.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js';
+import {
+  getFirestore, collection, doc, addDoc, deleteDoc, setDoc,
+  onSnapshot, query, orderBy, limit, enableIndexedDbPersistence
+} from 'https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js';
+
+var app = document.getElementById('app');
+var $ = function (s) { return document.querySelector(s); };
+
+var store = { logs: [], active: null, mode: 'pending' };
+var view = 'home';
+var busy = false;
+var confirmId = null, confirmTimer = null;
+var cancelArm = false, cancelTimer = null;
+var sel = { pee: false, poop: false };
+var timeTouched = false;
+var logFilter = '';
+var backend = null;
+
+/* ---------- icons ---------- */
+var svg = function (body) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + body + '</svg>';
+};
+var I = {
+  feed: svg('<path d="M10.5 2.5h3V5h-3z"/><path d="M8.5 5h7l.5 2.5H8z"/><rect x="7" y="7.5" width="10" height="14" rx="2.5"/><path d="M7 13h4M7 17h4"/>'),
+  out: svg('<path d="M12 3c3 4 6 7 6 10.5a6 6 0 0 1-12 0C6 10 9 7 12 3z"/>'),
+  log: svg('<path d="M5 6h14M5 12h14M5 18h9"/>'),
+  chev: svg('<path d="M9 6l6 6-6 6"/>')
+};
+
+/* ---------- formatting ---------- */
+var pad = function (n) { return String(n).padStart(2, '0'); };
+function fmtClock(ms) {
+  var t = Math.max(0, Math.floor(ms / 1000));
+  var h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60;
+  return h ? h + ':' + pad(m) + ':' + pad(s) : pad(m) + ':' + pad(s);
+}
+function fmtDur(ms) {
+  var t = Math.round(ms / 1000);
+  var h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60;
+  if (h) return h + ' שע׳ ' + m + ' דק׳';
+  if (m) return m + ' דק׳ ' + pad(s) + ' שנ׳';
+  return s + ' שנ׳';
+}
+function fmtTotal(ms) {
+  if (ms < 60000) return Math.round(ms / 1000) + ' שנ׳';
+  var m = Math.round(ms / 60000), h = Math.floor(m / 60);
+  return h ? h + ' שע׳ ' + (m % 60) + ' דק׳' : m + ' דק׳';
+}
+function fmtTime(ts) {
+  var d = new Date(ts);
+  return pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+function dayKey(ts) {
+  var d = new Date(ts);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+function fullDate(ts) {
+  var d = new Date(ts);
+  var opts = { weekday: 'long', day: 'numeric', month: 'long' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString('he-IL', opts);
+}
+function ago(ts) {
+  var m = Math.floor((Date.now() - ts) / 60000);
+  if (m < 1) return 'ממש עכשיו';
+  if (m < 60) return 'לפני ' + m + ' דק׳';
+  var h = Math.floor(m / 60);
+  if (h < 24) return 'לפני ' + h + ' שע׳' + (m % 60 ? ' ' + (m % 60) + ' דק׳' : '');
+  var d = Math.floor(h / 24);
+  return d === 1 ? 'אתמול' : 'לפני ' + d + ' ימים';
+}
+function kindsText(kinds) {
+  return (kinds || []).map(function (k) { return k === 'pee' ? 'פיפי' : 'קקי'; }).join(' + ');
+}
+function nowHHMM() {
+  var d = new Date();
+  return pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+function stats(logs) {
+  var s = { feeds: 0, dur: 0, pee: 0, poop: 0 };
+  logs.forEach(function (l) {
+    if (l.type === 'feed') { s.feeds++; s.dur += l.durMs || 0; }
+    else if (l.type === 'output') {
+      var k = l.kinds || [];
+      if (k.indexOf('pee') > -1) s.pee++;
+      if (k.indexOf('poop') > -1) s.poop++;
+    }
+  });
+  return s;
+}
+function chipsHtml(s) {
+  var c = [];
+  if (s.feeds) c.push('<span class="chip feed">' + (s.feeds === 1 ? 'האכלה אחת' : s.feeds + ' האכלות') + ' · ' + fmtTotal(s.dur) + '</span>');
+  if (s.pee) c.push('<span class="chip out">' + s.pee + ' פיפי</span>');
+  if (s.poop) c.push('<span class="chip out">' + s.poop + ' קקי</span>');
+  return c.join('') || '<span class="chip">אין רשומות</span>';
+}
+function todayLogs(type) {
+  var k = dayKey(Date.now());
+  return store.logs.filter(function (l) { return dayKey(l.ts) === k && (!type || l.type === type); });
+}
+
+/* ---------- toast ---------- */
+var toastTimer = null;
+function toast(msg) {
+  var el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2400);
+}
+
+/* ---------- storage backends ---------- */
+var byTsDesc = function (a, b) { return b.ts - a.ts; };
+var localBackend = {
+  load: function () {
+    try { store.logs = JSON.parse(localStorage.getItem('yh.logs') || '[]'); } catch (e) { store.logs = []; }
+    try { store.active = JSON.parse(localStorage.getItem('yh.active') || 'null'); } catch (e) { store.active = null; }
+    store.logs.sort(byTsDesc);
+  },
+  save: function () {
+    try {
+      localStorage.setItem('yh.logs', JSON.stringify(store.logs));
+      localStorage.setItem('yh.active', JSON.stringify(store.active));
+    } catch (e) {}
+  },
+  addLog: function (l) {
+    var rec = Object.assign({ id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }, l);
+    store.logs = [rec].concat(store.logs).sort(byTsDesc);
+    this.save();
+    return Promise.resolve();
+  },
+  deleteLog: function (id) {
+    store.logs = store.logs.filter(function (l) { return l.id !== id; });
+    this.save();
+    return Promise.resolve();
+  },
+  setActive: function (v) {
+    store.active = v;
+    this.save();
+    return Promise.resolve();
+  }
+};
+
+function firebaseBackend(db) {
+  var col = collection(db, 'logs');
+  var stDoc = doc(db, 'state', 'feeding');
+  var q = query(col, orderBy('ts', 'desc'), limit(1000));
+
+  onSnapshot(q, function (snap) {
+    store.logs = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+    refresh();
+  }, function () { toast('לא הצלחתי לטעון את הרשומות'); });
+
+  onSnapshot(stDoc, function (snap) {
+    var d = snap.exists() ? snap.data() : null;
+    store.active = d && typeof d.startedAt === 'number' ? d.startedAt : null;
+    refresh();
+  }, function () {});
+
+  return {
+    addLog: function (l) { return addDoc(col, l); },
+    deleteLog: function (id) { return deleteDoc(doc(db, 'logs', id)); },
+    setActive: function (v) { return setDoc(stDoc, { startedAt: v }); }
+  };
+}
+
+/* ---------- templates ---------- */
+function bar(title) {
+  return '<div class="bar"><a class="back" href="#home">' + I.chev + '<span>חזרה</span></a><h1>' + title + '</h1></div>';
+}
+var templates = {
+  home: function () {
+    return '<header class="head"><h1>יומן האכלה ויציאות</h1><p class="today">' + fullDate(Date.now()) + '</p></header>' +
+      '<nav class="acts" aria-label="פעולות">' +
+      '<a class="act feed" href="#feeding">' + I.feed + '<span class="act-title">האכלה</span><span class="act-sub" id="subFeed"></span></a>' +
+      '<a class="act out" href="#output">' + I.out + '<span class="act-title">יציאות</span><span class="act-sub" id="subOut"></span></a>' +
+      '<a class="act log" href="#log">' + I.log + '<span class="act-title">יומן וסיכום</span><span class="act-sub" id="subLog"></span></a>' +
+      '</nav>' +
+      '<p class="note" id="modeNote" hidden>השמירה כרגע במכשיר הזה בלבד.</p>';
+  },
+  feeding: function () {
+    return bar('האכלה') +
+      '<section class="card">' +
+      '<div class="timer" id="timer">00:00</div>' +
+      '<p class="t-label" id="tLabel">מוכן להתחלה</p>' +
+      '<button type="button" class="big" id="feedBtn" data-act="feedToggle">התחלה</button>' +
+      '</section>' +
+      '<section><div class="sec-h"><h2>האכלות היום</h2><span class="count" id="feedCount"></span></div><ul class="entries" id="feedList"></ul></section>';
+  },
+  output: function () {
+    return bar('יציאות') +
+      '<section class="card">' +
+      '<p class="hint">אפשר לבחור יותר מאחד</p>' +
+      '<div class="choices">' +
+      '<button type="button" class="choice" id="c-pee" aria-pressed="false" data-act="kind" data-kind="pee">פיפי<span class="mark" aria-hidden="true">✓ נבחר</span></button>' +
+      '<button type="button" class="choice" id="c-poop" aria-pressed="false" data-act="kind" data-kind="poop">קקי<span class="mark" aria-hidden="true">✓ נבחר</span></button>' +
+      '</div>' +
+      '<label class="field" for="outDate">תאריך<input type="date" id="outDate"></label>' +
+      '<label class="field" for="outTime">שעה<input type="time" id="outTime"></label>' +
+      '<button type="button" class="big out" id="saveOut" data-act="saveOut" disabled>שמירה</button>' +
+      '</section>' +
+      '<section><div class="sec-h"><h2>יציאות היום</h2><span class="count" id="outCount"></span></div><ul class="entries" id="outList"></ul></section>';
+  },
+  log: function () {
+    return bar('יומן וסיכום') +
+      '<div class="filter"><label class="field" for="logDate">תאריך<input type="date" id="logDate" value="' + logFilter + '"></label>' +
+      '<button type="button" class="ghost" data-act="logAll">הצג הכל</button></div>' +
+      '<div id="days"></div>';
+  }
+};
+
+/* ---------- rendering ---------- */
+function entryHtml(l) {
+  var isFeed = l.type === 'feed';
+  var title = isFeed ? 'האכלה' : kindsText(l.kinds);
+  var sub = isFeed ? fmtTime(l.ts) + '–' + fmtTime(l.ts + (l.durMs || 0)) + ' · ' + fmtDur(l.durMs || 0) : fmtTime(l.ts);
+  var armed = confirmId === l.id;
+  return '<li class="entry"><div class="e-main"><span class="pill ' + (isFeed ? 'feed' : 'out') + '">' + title + '</span><span class="e-sub">' + sub + '</span></div>' +
+    '<button type="button" class="del' + (armed ? ' armed' : '') + '" data-act="del" data-id="' + String(l.id).replace(/[^\w.~:@+-]/g, '') + '">' + (armed ? 'למחוק?' : 'מחיקה') + '</button></li>';
+}
+function listHtml(items, emptyText) {
+  return items.length ? items.map(entryHtml).join('') : '<li class="empty">' + emptyText + '</li>';
+}
+
+function updateHome() {
+  var f = $('#subFeed');
+  if (!f) return;
+  var lastFeed = store.logs.find(function (l) { return l.type === 'feed'; });
+  var lastOut = store.logs.find(function (l) { return l.type === 'output'; });
+  if (store.active != null) f.textContent = 'מתבצעת עכשיו · ' + fmtClock(Date.now() - store.active);
+  else if (lastFeed) f.textContent = 'אחרונה ' + ago(lastFeed.ts + (lastFeed.durMs || 0)) + ' · ' + fmtDur(lastFeed.durMs || 0);
+  else f.textContent = 'עוד אין האכלות';
+  $('#subOut').textContent = lastOut ? 'אחרונה ' + ago(lastOut.ts) + ' · ' + kindsText(lastOut.kinds) : 'עוד אין רשומות';
+  var s = stats(todayLogs());
+  var parts = [];
+  if (s.feeds) parts.push(s.feeds === 1 ? 'האכלה אחת' : s.feeds + ' האכלות');
+  if (s.pee) parts.push(s.pee + ' פיפי');
+  if (s.poop) parts.push(s.poop + ' קקי');
+  $('#subLog').textContent = parts.length ? 'היום: ' + parts.join(' · ') : 'עוד אין רשומות היום';
+  $('#modeNote').hidden = store.mode !== 'local';
+}
+
+function updateTimer() {
+  var t = $('#timer');
+  if (!t) return;
+  t.textContent = store.active != null ? fmtClock(Date.now() - store.active) : '00:00';
+}
+function updateFeeding() {
+  var btn = $('#feedBtn');
+  if (!btn) return;
+  var running = store.active != null;
+  btn.textContent = running ? 'סיום' : 'התחלה';
+  btn.classList.toggle('stop', running);
+  $('#timer').classList.toggle('running', running);
+  $('#tLabel').innerHTML = running ? '<span class="dot"></span>האכלה מתבצעת מ-' + fmtTime(store.active) : 'מוכן להתחלה';
+  updateTimer();
+  var items = todayLogs('feed');
+  $('#feedCount').textContent = items.length ? fmtTotal(stats(items).dur) + ' סה״כ' : '';
+  $('#feedList').innerHTML = listHtml(items, 'עוד אין האכלות היום. לחץ על התחלה כשמתחילים.');
+}
+
+function todayISO() {
+  var d = new Date();
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+function syncTime() {
+  var el = $('#outTime'), de = $('#outDate');
+  if (!el) return;
+  if (de) de.max = todayISO();
+  if (timeTouched) return;
+  var v = nowHHMM();
+  if (el.value !== v) el.value = v;
+  if (de && de.value !== todayISO()) de.value = todayISO();
+}
+function updateOutput() {
+  if (!$('#outList')) return;
+  ['pee', 'poop'].forEach(function (k) { $('#c-' + k).setAttribute('aria-pressed', sel[k] ? 'true' : 'false'); });
+  $('#saveOut').disabled = !(sel.pee || sel.poop);
+  syncTime();
+  var items = todayLogs('output');
+  var s = stats(items);
+  var cnt = [];
+  if (s.pee) cnt.push(s.pee + ' פיפי');
+  if (s.poop) cnt.push(s.poop + ' קקי');
+  $('#outCount').textContent = cnt.join(' · ');
+  $('#outList').innerHTML = listHtml(items, 'עוד אין יציאות היום.');
+}
+
+function renderLog() {
+  var root = $('#days');
+  if (!root) return;
+  if (!store.logs.length) {
+    root.innerHTML = '<p class="empty">עוד אין רשומות. האכלות ויציאות שתשמור יופיעו כאן לפי תאריך.</p>';
+    return;
+  }
+  var src = logFilter ? store.logs.filter(function (l) { return dayKey(l.ts) === logFilter; }) : store.logs;
+  if (!src.length) {
+    root.innerHTML = '<p class="empty">אין רשומות בתאריך הזה.</p>';
+    return;
+  }
+  var groups = [], idx = {};
+  src.forEach(function (l) {
+    var k = dayKey(l.ts);
+    if (!(k in idx)) { idx[k] = groups.length; groups.push({ key: k, ts: l.ts, items: [] }); }
+    groups[idx[k]].items.push(l);
+  });
+  var tk = dayKey(Date.now());
+  var yd = new Date(); yd.setDate(yd.getDate() - 1);
+  var yk = dayKey(yd.getTime());
+  root.innerHTML = groups.map(function (g) {
+    var label = g.key === tk ? 'היום' : g.key === yk ? 'אתמול' : '';
+    return '<section class="day"><header class="day-h"><h2>' + (label || fullDate(g.ts)) + '</h2>' + (label ? '<span class="day-d">' + fullDate(g.ts) + '</span>' : '') + '</header>' +
+      '<div class="chips">' + chipsHtml(stats(g.items)) + '</div>' +
+      '<ul class="entries">' + g.items.map(entryHtml).join('') + '</ul></section>';
+  }).join('');
+}
+
+function refresh() {
+  if (view === 'home') updateHome();
+  else if (view === 'feeding') updateFeeding();
+  else if (view === 'output') updateOutput();
+  else renderLog();
+}
+function tick() {
+  if (view === 'home') updateHome();
+  else if (view === 'feeding') updateTimer();
+  else if (view === 'output') syncTime();
+}
+
+function mount() {
+  var h = location.hash.replace('#', '');
+  view = ['feeding', 'output', 'log'].indexOf(h) > -1 ? h : 'home';
+  confirmId = null; cancelArm = false;
+  app.innerHTML = templates[view]();
+  refresh();
+  window.scrollTo(0, 0);
+}
+
+/* ---------- actions ---------- */
+async function feedToggle() {
+  if (!backend) return toast('רגע, טוען…');
+  if (busy) return;
+  busy = true;
+  try {
+    if (store.active == null) {
+      await backend.setActive(Date.now());
+    } else {
+      var start = store.active, dur = Date.now() - start;
+      await backend.addLog({ type: 'feed', ts: start, durMs: dur });
+      await backend.setActive(null);
+      toast('נשמרה האכלה · ' + fmtDur(dur));
+    }
+  } catch (e) { toast('השמירה נכשלה. נסה שוב.'); }
+  busy = false; cancelArm = false; refresh();
+}
+async function saveOut() {
+  var kinds = ['pee', 'poop'].filter(function (k) { return sel[k]; });
+  if (!kinds.length) return;
+  if (!backend) return toast('רגע, טוען…');
+  if (busy) return;
+  busy = true;
+  var ts = Date.now();
+  var v = $('#outTime') ? $('#outTime').value : '';
+  var dv = $('#outDate') ? $('#outDate').value : '';
+  if (timeTouched && /^\d\d:\d\d$/.test(v) && /^\d{4}-\d\d-\d\d$/.test(dv)) {
+    var p = v.split(':').map(Number), q = dv.split('-').map(Number);
+    ts = new Date(q[0], q[1] - 1, q[2], p[0], p[1], 0, 0).getTime();
+    if (ts > Date.now() + 60000) { busy = false; return toast('התאריך או השעה בעתיד'); }
+  }
+  try {
+    await backend.addLog({ type: 'output', ts: ts, kinds: kinds });
+    sel = { pee: false, poop: false };
+    timeTouched = false;
+    toast('נשמר · ' + kindsText(kinds));
+  } catch (e) { toast('השמירה נכשלה. נסה שוב.'); }
+  busy = false; refresh();
+}
+async function del(id) {
+  if (!backend || busy) return;
+  if (confirmId !== id) {
+    confirmId = id;
+    clearTimeout(confirmTimer);
+    confirmTimer = setTimeout(function () { confirmId = null; refresh(); }, 3500);
+    return refresh();
+  }
+  busy = true;
+  try { await backend.deleteLog(id); toast('נמחק'); } catch (e) { toast('המחיקה נכשלה. נסה שוב.'); }
+  busy = false; confirmId = null; refresh();
+}
+
+app.addEventListener('click', function (e) {
+  var el = e.target.closest('[data-act]');
+  if (!el) return;
+  var a = el.getAttribute('data-act');
+  if (a === 'feedToggle') feedToggle();
+  else if (a === 'kind') { var k = el.getAttribute('data-kind'); sel[k] = !sel[k]; updateOutput(); }
+  else if (a === 'saveOut') saveOut();
+  else if (a === 'logAll') { logFilter = ''; var li = $('#logDate'); if (li) li.value = ''; renderLog(); }
+  else if (a === 'del') del(el.getAttribute('data-id'));
+});
+function onField(e) {
+  var id = e.target && e.target.id;
+  if (id === 'outTime' || id === 'outDate') timeTouched = true;
+  if (id === 'logDate') { logFilter = e.target.value; renderLog(); }
+}
+app.addEventListener('input', onField);
+app.addEventListener('change', onField);
+
+/* ---------- boot ---------- */
+window.addEventListener('hashchange', mount);
+mount();
+setInterval(tick, 1000);
+
+// Initialize Firebase, fall back to localStorage
+(async function init() {
+  try {
+    if (firebaseConfig.apiKey === 'YOUR_API_KEY') throw new Error('unconfigured');
+    var fireApp = initializeApp(firebaseConfig);
+    var db = getFirestore(fireApp);
+    try { await enableIndexedDbPersistence(db); } catch (e) { /* multi-tab or unsupported */ }
+    store.mode = 'db';
+    backend = firebaseBackend(db);
+  } catch (e) {
+    store.mode = 'local';
+    localBackend.load();
+    backend = localBackend;
+    refresh();
+  }
+})();
+
+// Register service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(function () {});
+}
+</script>
+</body>
+</html>
