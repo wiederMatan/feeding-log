@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yh-v2';
+const CACHE_NAME = 'yh-v1';
 const SHELL = [
   '/',
   '/index.html',
