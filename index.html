@@ -111,6 +111,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .big.stop { background: var(--stop); color: var(--on-stop); }
 .big.out { background: var(--out); color: var(--on-out); }
 .big:disabled { opacity: 0.4; cursor: not-allowed; }
+.side-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ghost { min-height: 44px; border: 0; background: none; color: var(--muted); font-weight: 600; }
 .ghost.armed { color: var(--stop); }
 
@@ -184,7 +185,7 @@ import {
 var app = document.getElementById('app');
 var $ = function (s) { return document.querySelector(s); };
 
-var store = { logs: [], active: null, mode: 'pending' };
+var store = { logs: [], active: null, activeSide: null, mode: 'pending' };
 var view = 'home';
 var busy = false;
 var confirmId = null, confirmTimer = null;
@@ -294,13 +295,17 @@ var byTsDesc = function (a, b) { return b.ts - a.ts; };
 var localBackend = {
   load: function () {
     try { store.logs = JSON.parse(localStorage.getItem('yh.logs') || '[]'); } catch (e) { store.logs = []; }
-    try { store.active = JSON.parse(localStorage.getItem('yh.active') || 'null'); } catch (e) { store.active = null; }
+    try {
+      var a = JSON.parse(localStorage.getItem('yh.active') || 'null');
+      if (a && typeof a === 'object') { store.active = a.startedAt; store.activeSide = a.side || null; }
+      else { store.active = a; store.activeSide = null; }
+    } catch (e) { store.active = null; store.activeSide = null; }
     store.logs.sort(byTsDesc);
   },
   save: function () {
     try {
       localStorage.setItem('yh.logs', JSON.stringify(store.logs));
-      localStorage.setItem('yh.active', JSON.stringify(store.active));
+      localStorage.setItem('yh.active', JSON.stringify(store.active != null ? { startedAt: store.active, side: store.activeSide } : null));
     } catch (e) {}
   },
   addLog: function (l) {
@@ -315,7 +320,13 @@ var localBackend = {
     return Promise.resolve();
   },
   setActive: function (v) {
-    store.active = v;
+    if (v && typeof v === 'object') {
+      store.active = v.startedAt;
+      store.activeSide = v.side || null;
+    } else {
+      store.active = null;
+      store.activeSide = null;
+    }
     this.save();
     return Promise.resolve();
   }
@@ -333,14 +344,23 @@ function firebaseBackend(db) {
 
   onSnapshot(stDoc, function (snap) {
     var d = snap.exists() ? snap.data() : null;
-    store.active = d && typeof d.startedAt === 'number' ? d.startedAt : null;
+    if (d && typeof d.startedAt === 'number') {
+      store.active = d.startedAt;
+      store.activeSide = d.side || null;
+    } else {
+      store.active = null;
+      store.activeSide = null;
+    }
     refresh();
   }, function () {});
 
   return {
     addLog: function (l) { return addDoc(col, l); },
     deleteLog: function (id) { return deleteDoc(doc(db, 'logs', id)); },
-    setActive: function (v) { return setDoc(stDoc, { startedAt: v }); }
+    setActive: function (v) {
+      if (v && typeof v === 'object') return setDoc(stDoc, { startedAt: v.startedAt, side: v.side || null });
+      return setDoc(stDoc, { startedAt: null, side: null });
+    }
   };
 }
 
@@ -363,7 +383,8 @@ var templates = {
       '<section class="card">' +
       '<div class="timer" id="timer">00:00</div>' +
       '<p class="t-label" id="tLabel">מוכן להתחלה</p>' +
-      '<button type="button" class="big" id="feedBtn" data-act="feedToggle">התחלה</button>' +
+      '<div class="side-btns" id="startBtns"><button type="button" class="big" data-act="feedStart" data-side="right">צד ימין</button><button type="button" class="big" data-act="feedStart" data-side="left">צד שמאל</button></div>' +
+      '<button type="button" class="big stop" id="stopBtn" data-act="feedStop" hidden>סיום</button>' +
       '</section>' +
       '<section><div class="sec-h"><h2>האכלות היום</h2><span class="count" id="feedCount"></span></div><ul class="entries" id="feedList"></ul></section>';
   },
@@ -392,7 +413,7 @@ var templates = {
 /* ---------- rendering ---------- */
 function entryHtml(l) {
   var isFeed = l.type === 'feed';
-  var title = isFeed ? 'האכלה' : kindsText(l.kinds);
+  var title = isFeed ? ('האכלה' + (l.side ? ' ' + sideText(l.side) : '')) : kindsText(l.kinds);
   var sub = isFeed ? fmtTime(l.ts) + '–' + fmtTime(l.ts + (l.durMs || 0)) + ' · ' + fmtDur(l.durMs || 0) : fmtTime(l.ts);
   var armed = confirmId === l.id;
   return '<li class="entry"><div class="e-main"><span class="pill ' + (isFeed ? 'feed' : 'out') + '">' + title + '</span><span class="e-sub">' + sub + '</span></div>' +
@@ -407,7 +428,7 @@ function updateHome() {
   if (!f) return;
   var lastFeed = store.logs.find(function (l) { return l.type === 'feed'; });
   var lastOut = store.logs.find(function (l) { return l.type === 'output'; });
-  if (store.active != null) f.textContent = 'מתבצעת עכשיו · ' + fmtClock(Date.now() - store.active);
+  if (store.active != null) f.textContent = 'מתבצעת עכשיו' + (store.activeSide ? ' · צד ' + sideText(store.activeSide) : '') + ' · ' + fmtClock(Date.now() - store.active);
   else if (lastFeed) f.textContent = 'אחרונה ' + ago(lastFeed.ts + (lastFeed.durMs || 0)) + ' · ' + fmtDur(lastFeed.durMs || 0);
   else f.textContent = 'עוד אין האכלות';
   $('#subOut').textContent = lastOut ? 'אחרונה ' + ago(lastOut.ts) + ' · ' + kindsText(lastOut.kinds) : 'עוד אין רשומות';
@@ -425,14 +446,17 @@ function updateTimer() {
   if (!t) return;
   t.textContent = store.active != null ? fmtClock(Date.now() - store.active) : '00:00';
 }
+function sideText(side) { return side === 'right' ? 'ימין' : side === 'left' ? 'שמאל' : ''; }
+
 function updateFeeding() {
-  var btn = $('#feedBtn');
-  if (!btn) return;
+  var startBtns = $('#startBtns'), stopBtn = $('#stopBtn');
+  if (!startBtns) return;
   var running = store.active != null;
-  btn.textContent = running ? 'סיום' : 'התחלה';
-  btn.classList.toggle('stop', running);
+  startBtns.hidden = running;
+  stopBtn.hidden = !running;
   $('#timer').classList.toggle('running', running);
-  $('#tLabel').innerHTML = running ? '<span class="dot"></span>האכלה מתבצעת מ-' + fmtTime(store.active) : 'מוכן להתחלה';
+  var sideLabel = store.activeSide ? ' · צד ' + sideText(store.activeSide) : '';
+  $('#tLabel').innerHTML = running ? '<span class="dot"></span>האכלה מתבצעת מ-' + fmtTime(store.active) + sideLabel : 'מוכן להתחלה';
   updateTimer();
   var items = todayLogs('feed');
   $('#feedCount').textContent = items.length ? fmtTotal(stats(items).dur) + ' סה״כ' : '';
@@ -517,19 +541,24 @@ function mount() {
 }
 
 /* ---------- actions ---------- */
-async function feedToggle() {
+async function feedStart(side) {
   if (!backend) return toast('רגע, טוען…');
-  if (busy) return;
+  if (busy || store.active != null) return;
   busy = true;
   try {
-    if (store.active == null) {
-      await backend.setActive(Date.now());
-    } else {
-      var start = store.active, dur = Date.now() - start;
-      await backend.addLog({ type: 'feed', ts: start, durMs: dur });
-      await backend.setActive(null);
-      toast('נשמרה האכלה · ' + fmtDur(dur));
-    }
+    await backend.setActive({ startedAt: Date.now(), side: side });
+  } catch (e) { toast('השמירה נכשלה. נסה שוב.'); }
+  busy = false; refresh();
+}
+async function feedStop() {
+  if (!backend) return toast('רגע, טוען…');
+  if (busy || store.active == null) return;
+  busy = true;
+  try {
+    var start = store.active, dur = Date.now() - start;
+    await backend.addLog({ type: 'feed', ts: start, durMs: dur, side: store.activeSide || null });
+    await backend.setActive(null);
+    toast('נשמרה האכלה · ' + fmtDur(dur));
   } catch (e) { toast('השמירה נכשלה. נסה שוב.'); }
   busy = false; cancelArm = false; refresh();
 }
@@ -572,7 +601,8 @@ app.addEventListener('click', function (e) {
   var el = e.target.closest('[data-act]');
   if (!el) return;
   var a = el.getAttribute('data-act');
-  if (a === 'feedToggle') feedToggle();
+  if (a === 'feedStart') feedStart(el.getAttribute('data-side'));
+  else if (a === 'feedStop') feedStop();
   else if (a === 'kind') { var k = el.getAttribute('data-kind'); sel[k] = !sel[k]; updateOutput(); }
   else if (a === 'saveOut') saveOut();
   else if (a === 'logAll') { logFilter = ''; var li = $('#logDate'); if (li) li.value = ''; renderLog(); }
