@@ -83,8 +83,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .act.log { background: var(--surface); border-color: var(--line); }
 .act.log svg { color: var(--muted); }
 .note { color: var(--muted); font-size: 14px; }
-.foot { display: flex; justify-content: center; }
-.small { min-height: 36px; padding-inline: 14px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); font-size: 14px; font-weight: 600; }
 
 .bar { display: flex; align-items: center; gap: 14px; }
 .back {
@@ -391,8 +389,7 @@ var templates = {
       '<a class="act out" href="#output">' + I.out + '<span class="act-title">יציאות</span><span class="act-sub" id="subOut"></span></a>' +
       '<a class="act log" href="#log">' + I.log + '<span class="act-title">יומן וסיכום</span><span class="act-sub" id="subLog"></span></a>' +
       '</nav>' +
-      '<p class="note" id="modeNote" hidden>השמירה כרגע במכשיר הזה בלבד.</p>' +
-      '<div class="foot"><button type="button" class="small" data-act="clearCache">ניקוי קאש ורענון</button></div>';
+      '<p class="note" id="modeNote" hidden>השמירה כרגע במכשיר הזה בלבד.</p>';
   },
   feeding: function () {
     return bar('האכלה') +
@@ -659,24 +656,6 @@ async function editSave() {
   busy = false; refresh();
 }
 
-// Clears the service worker and its caches only; saved logs are untouched.
-async function clearCache() {
-  if (busy) return;
-  busy = true;
-  toast('מנקה קאש…');
-  try {
-    if ('caches' in window) {
-      var keys = await caches.keys();
-      await Promise.all(keys.map(function (k) { return caches.delete(k); }));
-    }
-    if ('serviceWorker' in navigator) {
-      var regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map(function (r) { return r.unregister(); }));
-    }
-  } catch (e) {}
-  location.reload();
-}
-
 app.addEventListener('click', function (e) {
   var el = e.target.closest('[data-act]');
   if (!el) return;
@@ -690,7 +669,6 @@ app.addEventListener('click', function (e) {
   else if (a === 'edit') editStart(el.getAttribute('data-id'));
   else if (a === 'editSave') editSave();
   else if (a === 'editCancel') editCancel();
-  else if (a === 'clearCache') clearCache();
 });
 function onField(e) {
   var id = e.target && e.target.id;
