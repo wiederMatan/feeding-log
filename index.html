@@ -147,6 +147,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pill.out { background: var(--out-soft); color: var(--out); }
 .del { min-height: 40px; padding-inline: 12px; border-radius: 10px; border: 1px solid transparent; background: none; color: var(--muted); font-size: 14px; font-weight: 600; flex: none; }
 .del.armed { color: var(--stop); border-color: var(--stop); }
+.e-acts { display: flex; gap: 2px; flex: none; }
+.entry.editing { display: grid; gap: 10px; justify-content: stretch; }
+.entry.editing .pill { justify-self: start; }
+.edit-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.edit-btns button { min-height: 48px; border-radius: 12px; font-weight: 700; border: 1px solid var(--line); background: var(--bg); }
+.edit-btns .save { background: var(--feed); color: var(--on-feed); border-color: var(--feed); }
 .empty { color: var(--muted); text-align: center; padding: 18px 14px; border: 1px dashed var(--line); border-radius: 12px; }
 
 .day { display: grid; gap: 10px; margin-bottom: 26px; }
@@ -178,7 +184,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js';
 import {
-  getFirestore, collection, doc, addDoc, deleteDoc, setDoc,
+  getFirestore, collection, doc, addDoc, deleteDoc, setDoc, updateDoc,
   onSnapshot, query, orderBy, limit, enableIndexedDbPersistence
 } from 'https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js';
 
@@ -193,6 +199,7 @@ var cancelArm = false, cancelTimer = null;
 var sel = { pee: false, poop: false };
 var timeTouched = false;
 var logFilter = '';
+var editId = null, editDraft = null;
 var backend = null;
 
 /* ---------- icons ---------- */
@@ -319,6 +326,11 @@ var localBackend = {
     this.save();
     return Promise.resolve();
   },
+  updateLog: function (id, patch) {
+    store.logs = store.logs.map(function (l) { return l.id === id ? Object.assign({}, l, patch) : l; }).sort(byTsDesc);
+    this.save();
+    return Promise.resolve();
+  },
   setActive: function (v) {
     if (v && typeof v === 'object') {
       store.active = v.startedAt;
@@ -357,6 +369,7 @@ function firebaseBackend(db) {
   return {
     addLog: function (l) { return addDoc(col, l); },
     deleteLog: function (id) { return deleteDoc(doc(db, 'logs', id)); },
+    updateLog: function (id, patch) { return updateDoc(doc(db, 'logs', id), patch); },
     setActive: function (v) {
       if (v && typeof v === 'object') return setDoc(stDoc, { startedAt: v.startedAt, side: v.side || null });
       return setDoc(stDoc, { startedAt: null, side: null });
@@ -411,13 +424,24 @@ var templates = {
 };
 
 /* ---------- rendering ---------- */
+function safeId(id) { return String(id).replace(/[^\w.~:@+-]/g, ''); }
+function editHtml(l) {
+  var d = editDraft;
+  return '<li class="entry editing"><span class="pill feed">עריכת האכלה' + (l.side ? ' ' + sideText(l.side) : '') + '</span>' +
+    '<label class="field" for="edDate">תאריך<input type="date" id="edDate" max="' + todayISO() + '" value="' + d.date + '"></label>' +
+    '<label class="field" for="edStart">התחלה<input type="time" id="edStart" value="' + d.start + '"></label>' +
+    '<label class="field" for="edEnd">סיום<input type="time" id="edEnd" value="' + d.end + '"></label>' +
+    '<div class="edit-btns"><button type="button" class="save" data-act="editSave">שמירה</button><button type="button" data-act="editCancel">ביטול</button></div></li>';
+}
 function entryHtml(l) {
   var isFeed = l.type === 'feed';
+  if (isFeed && editId === l.id) return editHtml(l);
   var title = isFeed ? ('האכלה' + (l.side ? ' ' + sideText(l.side) : '')) : kindsText(l.kinds);
   var sub = isFeed ? fmtTime(l.ts) + '–' + fmtTime(l.ts + (l.durMs || 0)) + ' · ' + fmtDur(l.durMs || 0) : fmtTime(l.ts);
   var armed = confirmId === l.id;
   return '<li class="entry"><div class="e-main"><span class="pill ' + (isFeed ? 'feed' : 'out') + '">' + title + '</span><span class="e-sub">' + sub + '</span></div>' +
-    '<button type="button" class="del' + (armed ? ' armed' : '') + '" data-act="del" data-id="' + String(l.id).replace(/[^\w.~:@+-]/g, '') + '">' + (armed ? 'למחוק?' : 'מחיקה') + '</button></li>';
+    '<div class="e-acts">' + (isFeed ? '<button type="button" class="del" data-act="edit" data-id="' + safeId(l.id) + '">עריכה</button>' : '') +
+    '<button type="button" class="del' + (armed ? ' armed' : '') + '" data-act="del" data-id="' + safeId(l.id) + '">' + (armed ? 'למחוק?' : 'מחיקה') + '</button></div></li>';
 }
 function listHtml(items, emptyText) {
   return items.length ? items.map(entryHtml).join('') : '<li class="empty">' + emptyText + '</li>';
@@ -535,6 +559,7 @@ function mount() {
   var h = location.hash.replace('#', '');
   view = ['feeding', 'output', 'log'].indexOf(h) > -1 ? h : 'home';
   confirmId = null; cancelArm = false;
+  editId = null; editDraft = null;
   app.innerHTML = templates[view]();
   refresh();
   window.scrollTo(0, 0);
@@ -597,6 +622,40 @@ async function del(id) {
   busy = false; confirmId = null; refresh();
 }
 
+function editStart(id) {
+  var l = store.logs.find(function (x) { return x.id === id; });
+  if (!l || l.type !== 'feed') return;
+  var d = new Date(l.ts);
+  editId = id;
+  editDraft = {
+    date: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
+    start: fmtTime(l.ts),
+    end: fmtTime(l.ts + (l.durMs || 0))
+  };
+  confirmId = null;
+  refresh();
+  var f = $('#edStart'); if (f) f.focus();
+}
+function editCancel() { editId = null; editDraft = null; refresh(); }
+async function editSave() {
+  if (!backend || busy || !editDraft) return;
+  var d = editDraft;
+  if (!/^\d{4}-\d\d-\d\d$/.test(d.date) || !/^\d\d:\d\d$/.test(d.start) || !/^\d\d:\d\d$/.test(d.end)) return toast('יש למלא תאריך, התחלה וסיום');
+  var q = d.date.split('-').map(Number), s = d.start.split(':').map(Number), e = d.end.split(':').map(Number);
+  var start = new Date(q[0], q[1] - 1, q[2], s[0], s[1], 0, 0).getTime();
+  var end = new Date(q[0], q[1] - 1, q[2], e[0], e[1], 0, 0).getTime();
+  if (end < start) end += 86400000; // ended after midnight
+  if (end > Date.now() + 60000) return toast('התאריך או השעה בעתיד');
+  if (end === start) return toast('הסיום חייב להיות אחרי ההתחלה');
+  busy = true;
+  try {
+    await backend.updateLog(editId, { ts: start, durMs: end - start });
+    editId = null; editDraft = null;
+    toast('ההאכלה עודכנה · ' + fmtDur(end - start));
+  } catch (err) { toast('השמירה נכשלה. נסה שוב.'); }
+  busy = false; refresh();
+}
+
 app.addEventListener('click', function (e) {
   var el = e.target.closest('[data-act]');
   if (!el) return;
@@ -607,11 +666,15 @@ app.addEventListener('click', function (e) {
   else if (a === 'saveOut') saveOut();
   else if (a === 'logAll') { logFilter = ''; var li = $('#logDate'); if (li) li.value = ''; renderLog(); }
   else if (a === 'del') del(el.getAttribute('data-id'));
+  else if (a === 'edit') editStart(el.getAttribute('data-id'));
+  else if (a === 'editSave') editSave();
+  else if (a === 'editCancel') editCancel();
 });
 function onField(e) {
   var id = e.target && e.target.id;
   if (id === 'outTime' || id === 'outDate') timeTouched = true;
   if (id === 'logDate') { logFilter = e.target.value; renderLog(); }
+  if (editDraft && (id === 'edDate' || id === 'edStart' || id === 'edEnd')) editDraft[{ edDate: 'date', edStart: 'start', edEnd: 'end' }[id]] = e.target.value;
 }
 app.addEventListener('input', onField);
 app.addEventListener('change', onField);
