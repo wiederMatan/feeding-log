@@ -706,6 +706,25 @@ window.addEventListener('hashchange', mount);
 mount();
 setInterval(tick, 1000);
 
+// One-time restore of the 31.10.2026 records; skips any that already exist.
+var SEED = [
+  ['feed', '07:59', 1020, 'left'], ['feed', '07:35', 737, 'right'], ['feed', '05:23', 383, 'left'],
+  ['feed', '04:55', 342, 'right'], ['feed', '04:33', 932, 'left'], ['feed', '03:40', 456, 'right'],
+  ['feed', '03:26', 606, 'left'], ['feed', '00:43', 675, 'right'], ['feed', '00:12', 1075, 'left'],
+  ['output', '05:08', ['pee']], ['output', '01:09', ['poop']]
+];
+async function restoreSeed() {
+  try { if (localStorage.getItem('yh.seed1')) return; } catch (e) { return; }
+  for (var i = 0; i < SEED.length; i++) {
+    var r = SEED[i], hm = r[1].split(':').map(Number);
+    var ts = new Date(2026, 9, 31, hm[0], hm[1], 0, 0).getTime();
+    var exists = store.logs.some(function (l) { return l.type === r[0] && Math.abs(l.ts - ts) < 60000; });
+    if (exists) continue;
+    await backend.addLog(r[0] === 'feed' ? { type: 'feed', ts: ts, durMs: r[2] * 1000, side: r[3] } : { type: 'output', ts: ts, kinds: r[2] });
+  }
+  try { localStorage.setItem('yh.seed1', '1'); } catch (e) {}
+}
+
 // Initialize Firebase, fall back to localStorage
 (async function init() {
   try {
@@ -719,6 +738,7 @@ setInterval(tick, 1000);
     store.mode = 'local';
     localBackend.load();
     backend = localBackend;
+    await restoreSeed();
     refresh();
   }
 })();
