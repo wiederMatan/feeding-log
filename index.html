@@ -82,6 +82,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .act.out { background: var(--out); color: var(--on-out); }
 .act.log { background: var(--surface); border-color: var(--line); }
 .act.log svg { color: var(--muted); }
+.act.alarm { background: var(--feed-soft); color: var(--feed); }
+.help { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 4px 16px; margin-top: -4px; }
+.help summary { min-height: 44px; display: flex; align-items: center; font-weight: 600; color: var(--muted); cursor: pointer; }
+.help ol { margin: 0 0 14px; padding-inline-start: 22px; display: grid; gap: 6px; }
+.help b { font-weight: 700; }
 .note { color: var(--muted); font-size: 14px; }
 .foot { display: flex; justify-content: center; }
 .small { min-height: 36px; padding-inline: 14px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); font-size: 14px; font-weight: 600; }
@@ -204,6 +209,19 @@ var logFilter = '';
 var editId = null, editDraft = null;
 var backend = null;
 
+/* ---------- feeding reminder (iOS Shortcuts) ---------- */
+// The button runs an iPhone shortcut that starts a 3-hour timer in the Clock app,
+// so the alarm rings even when the phone is locked and this app is closed.
+var ALARM_SHORTCUT = 'תזכורת האכלה';
+var ALARM_MS = 3 * 3600 * 1000;
+var ALARM_URL = 'shortcuts://run-shortcut?name=' + encodeURIComponent(ALARM_SHORTCUT);
+function alarmAt() {
+  try { var v = Number(localStorage.getItem('yh.alarmAt')); return v > Date.now() ? v : null; } catch (e) { return null; }
+}
+function alarmSet() {
+  try { localStorage.setItem('yh.alarmAt', String(Date.now() + ALARM_MS)); } catch (e) {}
+}
+
 /* ---------- icons ---------- */
 var svg = function (body) {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + body + '</svg>';
@@ -212,6 +230,7 @@ var I = {
   feed: svg('<path d="M10.5 2.5h3V5h-3z"/><path d="M8.5 5h7l.5 2.5H8z"/><rect x="7" y="7.5" width="10" height="14" rx="2.5"/><path d="M7 13h4M7 17h4"/>'),
   out: svg('<path d="M12 3c3 4 6 7 6 10.5a6 6 0 0 1-12 0C6 10 9 7 12 3z"/>'),
   log: svg('<path d="M5 6h14M5 12h14M5 18h9"/>'),
+  alarm: svg('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M5 3 2 6M19 3l3 3"/>'),
   chev: svg('<path d="M9 6l6 6-6 6"/>')
 };
 
@@ -390,7 +409,14 @@ var templates = {
       '<a class="act feed" href="#feeding">' + I.feed + '<span class="act-title">האכלה</span><span class="act-sub" id="subFeed"></span></a>' +
       '<a class="act out" href="#output">' + I.out + '<span class="act-title">יציאות</span><span class="act-sub" id="subOut"></span></a>' +
       '<a class="act log" href="#log">' + I.log + '<span class="act-title">יומן וסיכום</span><span class="act-sub" id="subLog"></span></a>' +
+      '<a class="act alarm" href="' + ALARM_URL + '" data-act="alarm">' + I.alarm + '<span class="act-title">תזכורת האכלה</span><span class="act-sub" id="subAlarm"></span></a>' +
       '</nav>' +
+      '<details class="help"><summary>איך מגדירים את התזכורת באייפון?</summary><ol>' +
+      '<li>פותחים את אפליקציית <b>קיצורים</b> (Shortcuts) ולוחצים על <b>+</b>.</li>' +
+      '<li>קוראים לקיצור בדיוק בשם <b>' + ALARM_SHORTCUT + '</b>.</li>' +
+      '<li>מוסיפים את הפעולה <b>הפעל טיימר</b> (Start Timer) ומגדירים <b>3 שעות</b>.</li>' +
+      '<li>שומרים. מעכשיו לחיצה על הכפתור מפעילה את הטיימר של השעון, והוא יצלצל גם כשהטלפון נעול.</li>' +
+      '</ol></details>' +
       '<p class="note" id="modeNote" hidden>השמירה כרגע במכשיר הזה בלבד.</p>' +
       '<div class="foot"><button type="button" class="small" data-act="clearCache">ניקוי קאש ורענון</button></div>';
   },
@@ -465,6 +491,8 @@ function updateHome() {
   if (s.pee) parts.push(s.pee + ' פיפי');
   if (s.poop) parts.push(s.poop + ' קקי');
   $('#subLog').textContent = parts.length ? 'היום: ' + parts.join(' · ') : 'עוד אין רשומות היום';
+  var at = alarmAt();
+  $('#subAlarm').textContent = at ? 'יצלצל ב-' + fmtTime(at) + ' · עוד ' + fmtClock(at - Date.now()) : 'טיימר של 3 שעות בשעון של האייפון';
   $('#modeNote').hidden = store.mode !== 'local';
 }
 
@@ -691,6 +719,7 @@ app.addEventListener('click', function (e) {
   else if (a === 'editSave') editSave();
   else if (a === 'editCancel') editCancel();
   else if (a === 'clearCache') clearCache();
+  else if (a === 'alarm') { alarmSet(); updateHome(); } // link still opens the shortcut
 });
 function onField(e) {
   var id = e.target && e.target.id;
