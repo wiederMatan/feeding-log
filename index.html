@@ -82,7 +82,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .act.out { background: var(--out); color: var(--on-out); }
 .act.log { background: var(--surface); border-color: var(--line); }
 .act.log svg { color: var(--muted); }
-.act.alarm { background: var(--feed-soft); color: var(--feed); }
+.act.alarm { background: var(--feed-soft); color: var(--feed); font: inherit; text-align: start; width: 100%; }
 .help { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 4px 16px; margin-top: -4px; }
 .help summary { min-height: 44px; display: flex; align-items: center; font-weight: 600; color: var(--muted); cursor: pointer; }
 .help ol { margin: 0 0 14px; padding-inline-start: 22px; display: grid; gap: 6px; }
@@ -210,16 +210,44 @@ var editId = null, editDraft = null;
 var backend = null;
 
 /* ---------- feeding reminder (iOS Shortcuts) ---------- */
-// The button runs an iPhone shortcut that starts a 3-hour timer in the Clock app,
-// so the alarm rings even when the phone is locked and this app is closed.
+// The button runs an iPhone shortcut that starts a timer in the Clock app, so the
+// alarm rings even when the phone is locked and this app is closed. The timer is
+// counted from the start of the last feeding, and the remaining minutes are passed
+// to the shortcut as its text input.
 var ALARM_SHORTCUT = 'תזכורת האכלה';
 var ALARM_MS = 3 * 3600 * 1000;
-var ALARM_URL = 'shortcuts://run-shortcut?name=' + encodeURIComponent(ALARM_SHORTCUT);
+var SESSION_GAP_MS = 20 * 60 * 1000; // sides fed within 20 min of each other count as one feeding
+function alarmUrl(minutes) {
+  return 'shortcuts://run-shortcut?name=' + encodeURIComponent(ALARM_SHORTCUT) + '&input=text&text=' + minutes;
+}
+// Start time of the most recent feeding session (an in-progress feeding counts).
+function lastFeedStart() {
+  var feeds = store.logs.filter(function (l) { return l.type === 'feed'; }); // newest first
+  var start = store.active != null ? store.active : feeds.length ? feeds[0].ts : null;
+  if (start == null) return null;
+  for (var i = store.active != null ? 0 : 1; i < feeds.length; i++) {
+    var f = feeds[i];
+    if (f.ts >= start) continue;
+    if (start - (f.ts + (f.durMs || 0)) > SESSION_GAP_MS) break;
+    start = f.ts;
+  }
+  return start;
+}
+function nextFeedAt() {
+  var s = lastFeedStart();
+  return s == null ? null : s + ALARM_MS;
+}
 function alarmAt() {
   try { var v = Number(localStorage.getItem('yh.alarmAt')); return v > Date.now() ? v : null; } catch (e) { return null; }
 }
-function alarmSet() {
-  try { localStorage.setItem('yh.alarmAt', String(Date.now() + ALARM_MS)); } catch (e) {}
+function startAlarm() {
+  var at = nextFeedAt();
+  if (at == null) at = Date.now() + ALARM_MS; // no feedings yet: plain 3 hours
+  var min = Math.round((at - Date.now()) / 60000);
+  if (min < 1) return toast('כבר עברו 3 שעות מתחילת ההאכלה האחרונה (' + fmtTime(at - ALARM_MS) + ')');
+  try { localStorage.setItem('yh.alarmAt', String(at)); } catch (e) {}
+  updateHome();
+  location.href = alarmUrl(min);
 }
 
 /* ---------- icons ---------- */
@@ -409,13 +437,14 @@ var templates = {
       '<a class="act feed" href="#feeding">' + I.feed + '<span class="act-title">האכלה</span><span class="act-sub" id="subFeed"></span></a>' +
       '<a class="act out" href="#output">' + I.out + '<span class="act-title">יציאות</span><span class="act-sub" id="subOut"></span></a>' +
       '<a class="act log" href="#log">' + I.log + '<span class="act-title">יומן וסיכום</span><span class="act-sub" id="subLog"></span></a>' +
-      '<a class="act alarm" href="' + ALARM_URL + '" data-act="alarm">' + I.alarm + '<span class="act-title">תזכורת האכלה</span><span class="act-sub" id="subAlarm"></span></a>' +
+      '<button type="button" class="act alarm" data-act="alarm">' + I.alarm + '<span class="act-title">תזכורת האכלה</span><span class="act-sub" id="subAlarm"></span></button>' +
       '</nav>' +
       '<details class="help"><summary>איך מגדירים את התזכורת באייפון?</summary><ol>' +
       '<li>פותחים את אפליקציית <b>קיצורים</b> (Shortcuts) ולוחצים על <b>+</b>.</li>' +
       '<li>קוראים לקיצור בדיוק בשם <b>' + ALARM_SHORTCUT + '</b>.</li>' +
-      '<li>מוסיפים את הפעולה <b>הפעל טיימר</b> (Start Timer) ומגדירים <b>3 שעות</b>.</li>' +
-      '<li>שומרים. מעכשיו לחיצה על הכפתור מפעילה את הטיימר של השעון, והוא יצלצל גם כשהטלפון נעול.</li>' +
+      '<li>מוסיפים את הפעולה <b>קבל מספרים מקלט</b> (Get Numbers from Input) עם <b>קלט קיצור</b> (Shortcut Input).</li>' +
+      '<li>מוסיפים את הפעולה <b>הפעל טיימר</b> (Start Timer). לוחצים על המספר, בוחרים את המשתנה <b>מספרים</b> (Numbers), ומגדירים יחידה של <b>דקות</b>.</li>' +
+      '<li>שומרים. מעכשיו לחיצה על הכפתור מפעילה טיימר עד 3 שעות מתחילת ההאכלה האחרונה, והוא יצלצל גם כשהטלפון נעול.</li>' +
       '</ol></details>' +
       '<p class="note" id="modeNote" hidden>השמירה כרגע במכשיר הזה בלבד.</p>' +
       '<div class="foot"><button type="button" class="small" data-act="clearCache">ניקוי קאש ורענון</button></div>';
@@ -492,7 +521,11 @@ function updateHome() {
   if (s.poop) parts.push(s.poop + ' קקי');
   $('#subLog').textContent = parts.length ? 'היום: ' + parts.join(' · ') : 'עוד אין רשומות היום';
   var at = alarmAt();
-  $('#subAlarm').textContent = at ? 'יצלצל ב-' + fmtTime(at) + ' · עוד ' + fmtClock(at - Date.now()) : 'טיימר של 3 שעות בשעון של האייפון';
+  var next = nextFeedAt();
+  $('#subAlarm').textContent = at ? 'יצלצל ב-' + fmtTime(at) + ' · עוד ' + fmtClock(at - Date.now())
+    : next == null ? 'טיימר של 3 שעות בשעון של האייפון'
+    : next > Date.now() ? 'האכלה הבאה ב-' + fmtTime(next) + ' · 3 שעות מ-' + fmtTime(next - ALARM_MS)
+    : 'עברו 3 שעות מההאכלה ב-' + fmtTime(next - ALARM_MS);
   $('#modeNote').hidden = store.mode !== 'local';
 }
 
@@ -719,7 +752,7 @@ app.addEventListener('click', function (e) {
   else if (a === 'editSave') editSave();
   else if (a === 'editCancel') editCancel();
   else if (a === 'clearCache') clearCache();
-  else if (a === 'alarm') { alarmSet(); updateHome(); } // link still opens the shortcut
+  else if (a === 'alarm') startAlarm();
 });
 function onField(e) {
   var id = e.target && e.target.id;
